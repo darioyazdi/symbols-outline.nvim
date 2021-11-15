@@ -1,3 +1,4 @@
+local ts_utils = require("nvim-treesitter.ts_utils")
 local M = {}
 
 -- export namespace SymbolKind {
@@ -39,17 +40,20 @@ local function lsp_kind_from_capture(capture)
 		["punctuation.bracket"] = -1,
 		conditional = -1,
 		["function.builtin"] = -1,
+		label = -1,
 
 		method = 6,
 		property = 7,
 		field = 8,
 		constructor = 9,
 		["function"] = 12,
+		["function.macro"] = 12,
 		variable = 13,
 		constant = 14,
 		["constant.builtin"] = 14,
 		string = 15,
 		number = 16,
+		boolean = 17,
 		operator = 25,
 		parameter = 26,
 	}
@@ -74,34 +78,60 @@ local function to_symbol_information(node_info)
 		return nil
 	end
 
+	local range = {
+		start = { line = node_info.start_pos[1], character = node_info.start_pos[2] },
+		["end"] = { line = node_info.end_pos[1], character = node_info.end_pos[2] },
+	}
+
 	return {
-		name = node_info.name,
+		name = node_info.text,
 		kind = lsp_kind,
-		range = { start = node_info.start_pos, ["end"] = node_info.end_pos },
+		range = range,
+		selectionRange = range,
 	}
 end
 
-local function get_named_treesitter_symbols()
-	-- todo: this errors is no parser is found
+local function get_named_treesitter_nodes()
 	parser = vim.treesitter.get_parser(0, lang)
 	if parser == nil then
 		return {}
 	end
 
 	local hlQuery = vim.treesitter.get_query(parser:lang(), "highlights")
+	local captured_nodes = {}
 	local results = {}
 
 	for _, tree in pairs(parser:parse()) do
 		for id, node, meta in hlQuery:iter_captures(tree:root(), 0) do
+			captured_nodes[node:id()] = true
+			-- if node:named() then
+			-- end
+		end
+
+		for id, node, meta in hlQuery:iter_captures(tree:root(), 0) do
 			if node:named() then
-				start_row, start_col, end_row, end_col = node:range()
-				table.insert(results, {
-					text = vim.treesitter.get_node_text(node, 0),
-					capture = hlQuery.captures[id],
-					type = node:type(),
-					start_pos = { start_row, start_col },
-					end_pos = { end_row, end_col },
-				})
+				local include_node = true
+				local parent = node:parent()
+				while parent do
+					if captured_nodes[parent:id()] then
+						include_node = false
+						break
+					end
+          parent = parent:parent()
+				end
+
+				if include_node then
+					start_row, start_col, end_row, end_col = node:range()
+					table.insert(results, {
+						text = vim.treesitter.get_node_text(node, 0),
+						capture = hlQuery.captures[id],
+						type = node:type(),
+						start_pos = { start_row, start_col },
+						end_pos = { end_row, end_col },
+					})
+				else
+					print("skip")
+				end
 			end
 		end
 	end
@@ -110,18 +140,17 @@ local function get_named_treesitter_symbols()
 end
 
 function M.should_use_provider(bufnr)
-	return vim.treesitter.get_parser(0, lang)
+	return pcall(vim.treesitter.get_parser, bufnr)
 end
 
 ---@param on_symbols function
 function M.request_symbols(on_symbols)
 	local symbol_info = {}
-	for _, res in pairs(get_named_treesitter_symbols()) do
+	for _, res in pairs(get_named_treesitter_nodes()) do
 		table.insert(symbol_info, to_symbol_information(res))
 	end
 
-  print(vim.inspect(symbol_info))
-	on_symbols(symbol_info)
+	on_symbols({ [777777] = { result = symbol_info } })
 end
 
 return M
