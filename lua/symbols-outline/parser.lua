@@ -19,6 +19,7 @@ end
 local function parse_result(result, depth, hierarchy)
     local ret = {}
 
+    print(vim.inspect(result))
     for index, value in pairs(result) do
         if not config.is_symbol_blacklisted(symbols.kinds[value.kind]) then
             -- the hierarchy is basically a table of booleans which tells whether

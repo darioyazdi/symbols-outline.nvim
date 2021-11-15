@@ -2,6 +2,7 @@ local M = {}
 
 local providers = {
     'symbols-outline/providers/nvim-lsp',
+    'symbols-outline/providers/treesitter',
     'symbols-outline/providers/coc',
     'symbols-outline/providers/markdown'
 }
