@@ -1,4 +1,3 @@
-local ts_utils = require("nvim-treesitter.ts_utils")
 local M = {}
 
 -- export namespace SymbolKind {
@@ -42,6 +41,7 @@ local function lsp_kind_from_capture(capture)
 		["function.builtin"] = -1,
 		label = -1,
 
+    namespace = 3, 
 		method = 6,
 		property = 7,
 		field = 8,
@@ -71,7 +71,6 @@ local function lsp_kind_from_capture(capture)
 	error("nil capture value")
 end
 
--- name, kind, range, children
 local function to_symbol_information(node_info)
 	local lsp_kind = lsp_kind_from_capture(node_info.capture)
 	if not lsp_kind then
@@ -91,12 +90,9 @@ local function to_symbol_information(node_info)
 	}
 end
 
-local function get_named_treesitter_nodes()
-	parser = vim.treesitter.get_parser(0, lang)
-	if parser == nil then
-		return {}
-	end
-
+-- TODO: this is unused and can likely be removed. Keeping 
+-- around for a little while in case it provides useful later. 
+local function get_named_treesitter_nodes(parser)
 	local hlQuery = vim.treesitter.get_query(parser:lang(), "highlights")
 	local captured_nodes = {}
 	local results = {}
@@ -117,7 +113,7 @@ local function get_named_treesitter_nodes()
 						include_node = false
 						break
 					end
-          parent = parent:parent()
+					parent = parent:parent()
 				end
 
 				if include_node then
@@ -139,15 +135,79 @@ local function get_named_treesitter_nodes()
 	return results
 end
 
+local function find_highlight_for_node(parser, node)
+	local hlQuery = vim.treesitter.get_query(parser:lang(), "highlights")
+	local leftmost = nil
+
+	start_row = node:range()
+	for id, child in hlQuery:iter_captures(node, 0, start_row, start_row + 1) do
+		if child:named() then
+			local rs, cs, re, ce = child:range()
+			local cnode = {
+				text = vim.treesitter.get_node_text(child, 0),
+				type = child:type(),
+				start_pos = { rs, cs },
+				end_pos = { re, ce },
+				capture = hlQuery.captures[id],
+			}
+
+			if
+				not leftmost
+				or leftmost.start_pos[1] < cnode.start_pos[1]
+				or (leftmost.start_pos[1] == cnode.start_pos[1] and leftmost.end_pos[1] < cnode.end_pos[1])
+			then
+				leftmost = cnode
+			end
+		end
+	end
+
+	return leftmost
+end
+
+local function get_named_nodes_from_root(parser, root)
+	local ret = {}
+
+	for child, field in root:iter_children() do
+		if child:named() then
+			start_row, start_col, end_row, end_col = child:range()
+			local node = {
+				text = vim.treesitter.get_node_text(child, 0),
+				type = child:type(),
+				start_pos = { start_row, start_col },
+				end_pos = { end_row, end_col },
+				field = field,
+			}
+
+			local captured_node = find_highlight_for_node(parser, child)
+			if captured_node ~= nil then
+				node.capture = captured_node.capture
+				node.text = captured_node.text
+				table.insert(ret, node)
+			end
+		end
+	end
+
+	return ret
+end
+
 function M.should_use_provider(bufnr)
 	return pcall(vim.treesitter.get_parser, bufnr)
 end
 
 ---@param on_symbols function
 function M.request_symbols(on_symbols)
+	local parser = vim.treesitter.get_parser(0, lang)
+	if parser == nil then
+		return {}
+	end
+
 	local symbol_info = {}
-	for _, res in pairs(get_named_treesitter_nodes()) do
-		table.insert(symbol_info, to_symbol_information(res))
+	for _, tree in pairs(parser:parse()) do
+		local nodes = get_named_nodes_from_root(parser, tree:root())
+
+		for _, node in pairs(nodes) do
+			table.insert(symbol_info, to_symbol_information(node))
+		end
 	end
 
 	on_symbols({ [777777] = { result = symbol_info } })
