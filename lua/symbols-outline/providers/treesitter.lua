@@ -77,7 +77,7 @@ local function to_lsp_range(node)
 		["end"] = { line = node.end_pos[1], character = node.end_pos[2] },
 	}
 
-  return range
+	return range
 end
 
 -- TODO: this is unused and can likely be removed. Keeping
@@ -134,6 +134,7 @@ local function find_highlight_for_node(parser, node)
 		if child:named() then
 			local rs, cs, re, ce = child:range()
 			local cnode = {
+				id = child:id(),
 				text = vim.treesitter.get_node_text(child, 0),
 				type = child:type(),
 				start_pos = { rs, cs },
@@ -145,9 +146,10 @@ local function find_highlight_for_node(parser, node)
 			if lsp_kind then
 				cnode.kind = lsp_kind
 
-				if
-					not leftmost
-					or leftmost.start_pos[1] < cnode.start_pos[1]
+				if not leftmost or leftmost.id == cnode.id and leftmost.kind > cnode.kind then
+					leftmost = cnode
+				elseif
+					leftmost.start_pos[1] < cnode.start_pos[1]
 					or (leftmost.start_pos[1] == cnode.start_pos[1] and leftmost.end_pos[1] < cnode.end_pos[1])
 				then
 					leftmost = cnode
@@ -177,9 +179,9 @@ local function get_named_nodes_from_root(parser, root)
 			if captured_node ~= nil then
 				node.capture = captured_node.capture
 				node.text = captured_node.text
-        node.range = to_lsp_range(node)  
-        node.selectionRange = node.range
-        node.kind = captured_node.kind
+				node.range = to_lsp_range(node)
+				node.selectionRange = node.range
+				node.kind = captured_node.kind
 				table.insert(ret, node)
 			end
 		end
@@ -199,7 +201,7 @@ function M.request_symbols(on_symbols)
 		return {}
 	end
 
-	local symbol_info={} 
+	local symbol_info = {}
 	for _, tree in pairs(parser:parse()) do
 		local nodes = get_named_nodes_from_root(parser, tree:root())
 
