@@ -1,5 +1,3 @@
-local M = {}
-
 -- export namespace SymbolKind {
 -- 	export const File = 1;
 -- 	export const Module = 2;
@@ -190,20 +188,23 @@ local function get_named_nodes_from_root(parser, root)
 	return ret
 end
 
+local M = {}
+
 function M.should_use_provider(bufnr)
-	return pcall(vim.treesitter.get_parser, bufnr)
+	local ok, parser = pcall(vim.treesitter.get_parser, bufnr)
+	if not ok then
+		return false
+	end
+
+	M.parser = parser
+	return true
 end
 
 ---@param on_symbols function
 function M.request_symbols(on_symbols)
-	local parser = vim.treesitter.get_parser(0, lang)
-	if parser == nil then
-		return {}
-	end
-
 	local symbol_info = {}
-	for _, tree in pairs(parser:parse()) do
-		local nodes = get_named_nodes_from_root(parser, tree:root())
+	for _, tree in pairs(M.parser:parse()) do
+		local nodes = get_named_nodes_from_root(M.parser, tree:root())
 
 		for _, node in pairs(nodes) do
 			table.insert(symbol_info, node)
