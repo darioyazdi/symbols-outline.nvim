@@ -41,7 +41,7 @@ local function lsp_kind_from_capture(capture)
 		["function.builtin"] = -1,
 		label = -1,
 
-    namespace = 3, 
+		namespace = 3,
 		method = 6,
 		property = 7,
 		field = 8,
@@ -71,27 +71,17 @@ local function lsp_kind_from_capture(capture)
 	error("nil capture value")
 end
 
-local function to_symbol_information(node_info)
-	local lsp_kind = lsp_kind_from_capture(node_info.capture)
-	if not lsp_kind then
-		return nil
-	end
-
+local function to_lsp_range(node)
 	local range = {
-		start = { line = node_info.start_pos[1], character = node_info.start_pos[2] },
-		["end"] = { line = node_info.end_pos[1], character = node_info.end_pos[2] },
+		start = { line = node.start_pos[1], character = node.start_pos[2] },
+		["end"] = { line = node.end_pos[1], character = node.end_pos[2] },
 	}
 
-	return {
-		name = node_info.text,
-		kind = lsp_kind,
-		range = range,
-		selectionRange = range,
-	}
+  return range
 end
 
--- TODO: this is unused and can likely be removed. Keeping 
--- around for a little while in case it provides useful later. 
+-- TODO: this is unused and can likely be removed. Keeping
+-- around for a little while in case it provides useful later.
 local function get_named_treesitter_nodes(parser)
 	local hlQuery = vim.treesitter.get_query(parser:lang(), "highlights")
 	local captured_nodes = {}
@@ -151,12 +141,17 @@ local function find_highlight_for_node(parser, node)
 				capture = hlQuery.captures[id],
 			}
 
-			if
-				not leftmost
-				or leftmost.start_pos[1] < cnode.start_pos[1]
-				or (leftmost.start_pos[1] == cnode.start_pos[1] and leftmost.end_pos[1] < cnode.end_pos[1])
-			then
-				leftmost = cnode
+			local lsp_kind = lsp_kind_from_capture(cnode.capture)
+			if lsp_kind then
+				cnode.kind = lsp_kind
+
+				if
+					not leftmost
+					or leftmost.start_pos[1] < cnode.start_pos[1]
+					or (leftmost.start_pos[1] == cnode.start_pos[1] and leftmost.end_pos[1] < cnode.end_pos[1])
+				then
+					leftmost = cnode
+				end
 			end
 		end
 	end
@@ -182,6 +177,9 @@ local function get_named_nodes_from_root(parser, root)
 			if captured_node ~= nil then
 				node.capture = captured_node.capture
 				node.text = captured_node.text
+        node.range = to_lsp_range(node)  
+        node.selectionRange = node.range
+        node.kind = captured_node.kind
 				table.insert(ret, node)
 			end
 		end
@@ -201,12 +199,12 @@ function M.request_symbols(on_symbols)
 		return {}
 	end
 
-	local symbol_info = {}
+	local symbol_info={} 
 	for _, tree in pairs(parser:parse()) do
 		local nodes = get_named_nodes_from_root(parser, tree:root())
 
 		for _, node in pairs(nodes) do
-			table.insert(symbol_info, to_symbol_information(node))
+			table.insert(symbol_info, node)
 		end
 	end
 
